@@ -3,14 +3,22 @@
 # This project compiles to static files in dist/ — there is no Node process at
 # runtime, so nginx serves the folder directly and pm2 is not involved.
 #
-# Copy into /etc/nginx/sites-available/feelthis, adjust `server_name` and the
-# `root` path, then:
-#   ln -s /etc/nginx/sites-available/feelthis /etc/nginx/sites-enabled/
-#   nginx -t && systemctl reload nginx
+# ONLY for a domain that nginx does not serve yet.
 #
-# If certbot already manages this domain, edit the existing `listen 443 ssl`
-# block instead of adding a new one — replace its `proxy_pass` with the `root`
-# and `location` blocks below.
+# If the domain already has a config — certbot wrote one, or an old app was
+# proxied — do NOT copy this over it. Edit that file instead and pull in
+# deploy/static-locations.conf. See the README.
+#
+# CHECK THE NAME BEFORE COPYING. Overwriting an existing config destroys the
+# TLS lines certbot put there:
+#
+#   ls -la /etc/nginx/sites-available/        # is the name already taken?
+#   sudo cp deploy/nginx-new-site.conf.example /etc/nginx/sites-available/CHOOSE-A-NAME
+#
+# Then edit server_name and root, and:
+#   ln -s /etc/nginx/sites-available/CHOOSE-A-NAME /etc/nginx/sites-enabled/
+#   nginx -t && systemctl reload nginx
+#   certbot --nginx -d example.com -d www.example.com
 
 server {
     listen 80;

@@ -44,8 +44,10 @@ Node-процесса в рантайме нет, поэтому **pm2 здес�
 # 1. Node не ниже 20.19 (или 22.12) — Vite 7 на более старых не соберётся
 node -v
 
-# 2. Забрать код
-cd ~ && git clone <репозиторий> site && cd site
+# 2. Забрать код. Именно в /var/www, НЕ в /root и не в домашнюю папку:
+#    у /root права 700, и nginx (работает от www-data) получит 403 на всё.
+sudo mkdir -p /var/www && cd /var/www
+sudo git clone <репозиторий> landing2 && cd landing2
 
 # 3. Ключи Telegram. .env.local в git не попадает, поэтому создаётся руками
 cp .env.example .env.local && nano .env.local
@@ -54,27 +56,70 @@ cp .env.example .env.local && nano .env.local
 npm ci
 npm run build
 
-# 5. Отдать nginx: взять deploy/nginx.conf.example, поправить server_name и root
-sudo cp deploy/nginx.conf.example /etc/nginx/sites-available/feelthis
-sudo nano /etc/nginx/sites-available/feelthis
-sudo ln -s /etc/nginx/sites-available/feelthis /etc/nginx/sites-enabled/
+# 5. Отдать nginx — см. ниже, вариант зависит от того, есть ли уже сертификат
+```
+
+### nginx: домен уже настроен и у него есть сертификат
+
+Это самый частый случай: certbot уже создал блок с `listen 443 ssl`, а внутри
+стоит `proxy_pass` на старое приложение. **Новый конфиг создавать не надо** —
+второй блок с тем же доменом только конфликтует, а с чужим `server_name` он
+ещё и перехватывает трафик как сервер по умолчанию.
+
+Найти нужный файл:
+
+```bash
+grep -rln "твой-домен" /etc/nginx/sites-available/
+```
+
+Открыть его и в блоке `listen 443 ssl` заменить `location / { proxy_pass ...; }`
+на три строки:
+
+```nginx
+root  /var/www/landing2/dist;
+index index.html;
+include /var/www/landing2/deploy/static-locations.conf;
+```
+
+Строки `ssl_certificate`, `listen` и `server_name` не трогать — они уже верные.
+Проверить, что в `server_name` есть оба варианта: `домен.com www.домен.com`.
+
+```bash
 sudo nginx -t && sudo systemctl reload nginx
 ```
 
-Если домен уже висел на pm2 через `proxy_pass` — не создавай новый конфиг, а в
-существующем блоке `listen 443 ssl` замени `proxy_pass` на `root` и `location`
-из примера. Старый процесс после этого можно убрать: `pm2 delete feelthis`.
+Старое приложение после этого можно убрать: `pm2 delete <имя>`.
+
+### nginx: домена ещё нет
+
+Сначала убедись, что имя свободно — перезапись чужого конфига уничтожит
+строки сертификата, которые туда прописал certbot:
+
+```bash
+ls -la /etc/nginx/sites-available/
+sudo cp deploy/nginx-new-site.conf.example /etc/nginx/sites-available/landing2
+sudo nano /etc/nginx/sites-available/landing2   # ОБЯЗАТЕЛЬНО: server_name и root
+sudo ln -sf /etc/nginx/sites-available/landing2 /etc/nginx/sites-enabled/
+sudo rm -f /etc/nginx/sites-enabled/default
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+Сертификат потом: `sudo certbot --nginx -d домен.com -d www.домен.com`.
 
 ### Каждое следующее обновление
 
 ```bash
-cd ~/site && ./deploy/deploy.sh
+cd /var/www/landing2 && bash deploy/deploy.sh
 ```
+
+Через `bash ...`, а не `./deploy/deploy.sh`: файл приезжает из репозитория,
+собранного на Windows, и бит запуска может не сохраниться. `bash` его не
+требует. Если хочется запускать напрямую — один раз `chmod +x deploy/deploy.sh`.
 
 Или руками, если привычнее:
 
 ```bash
-cd ~/site && git pull && npm ci && npm run build
+cd /var/www/landing2 && git pull && npm ci && npm run build
 ```
 
 `pm2 restart` больше не нужен — nginx читает файлы с диска, они меняются сразу.
@@ -119,9 +164,31 @@ systemctl show nginx -p Restart # Restart=on-failure
   обязательно пересобери, иначе в бандле останутся старые значения.
 - **Старый Node.** Vite 7 требует `^20.19.0 || >=22.12.0`. На Node 18 сборка
   падает с невнятной ошибкой про синтаксис.
-- **nginx не читает домашнюю папку.** Если `/home/USER` имеет права `700`,
-  nginx получит 403 на любой файл. Лечится `chmod 755 /home/USER` или переносом
-  проекта в `/var/www`.
+- **Проект лежит в `/root` или в домашней папке.** У `/root` права `700`, у
+  многих домашних папок тоже. nginx работает от `www-data` и получит 403 на
+  каждый файл, при том что `nginx -t` пройдёт успешно. Проверяется так:
+  `sudo -u www-data stat /путь/к/dist`. Лечится переносом в `/var/www`.
+- **`./deploy/deploy.sh` -> Permission denied.** Бит запуска потерялся при
+  переносе с Windows. Запускай `bash deploy/deploy.sh` или разово сделай
+  `chmod +x deploy/deploy.sh`.
+- **Остался включённым дефолтный конфиг nginx.** `/etc/nginx/sites-enabled/default`
+  может перехватывать домен раньше твоего блока. Удали его и перезагрузи nginx.
+- **Два блока на один домен.** Если конфиг с сертификатом уже есть, а рядом
+  положить второй — они конфликтуют, и запрос уходит не туда. Хуже того:
+  скопированный и не отредактированный пример с `server_name example.com`
+  становится сервером по умолчанию и ловит вообще весь трафик. В логе это
+  видно так: `server: example.com` при `host: твой-домен`. Лечится удалением
+  лишнего конфига и правкой существующего.
+- **Копирование конфига поверх существующего.** Имя файла в
+  `sites-available` часто совпадает с именем старого приложения. Копия затрёт
+  блок с `ssl_certificate`, который писал certbot, и HTTPS отвалится. Всегда
+  сначала `ls -la /etc/nginx/sites-available/`. Восстановить можно так:
+  сертификаты остаются в `/etc/letsencrypt/live/`, поэтому достаточно создать
+  http-блок заново и выполнить `certbot --nginx -d домен -d www.домен` — он
+  подхватит существующий сертификат и допишет 443-й блок сам.
+- **`nginx -t` проходит, а сайт не работает.** Тест проверяет только синтаксис.
+  Ни существование папки из `root`, ни права на неё он не проверяет. Настоящую
+  причину показывает `sudo tail -20 /var/log/nginx/error.log`.
 - **Мало памяти.** `vue-tsc` при сборке ест около 1 ГБ. На VDS с 512 МБ без
   swap сборка падает по OOM — тогда собирай локально и заливай только `dist`:
   `rsync -avz --delete dist/ user@server:~/site/dist/`
@@ -129,6 +196,9 @@ systemctl show nginx -p Restart # Restart=on-failure
 ### Проверить, что доехало
 
 ```bash
+# что вообще отвечает сервер и куда смотрит nginx
+curl -sI http://localhost/ | head -3
+sudo tail -20 /var/log/nginx/error.log
 curl -sI https://твой-домен/ | head -3
 curl -s https://твой-домен/ | grep -o 'index-[a-zA-Z0-9_-]*\.js'   # хеш меняется после сборки
 curl -sI https://твой-домен/review/lithegoat.mp4 | grep -i 'content-type\|content-length'

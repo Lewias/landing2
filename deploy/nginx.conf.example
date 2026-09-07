@@ -1,0 +1,59 @@
+# nginx server block for the built site.
+#
+# This project compiles to static files in dist/ — there is no Node process at
+# runtime, so nginx serves the folder directly and pm2 is not involved.
+#
+# Copy into /etc/nginx/sites-available/feelthis, adjust `server_name` and the
+# `root` path, then:
+#   ln -s /etc/nginx/sites-available/feelthis /etc/nginx/sites-enabled/
+#   nginx -t && systemctl reload nginx
+#
+# If certbot already manages this domain, edit the existing `listen 443 ssl`
+# block instead of adding a new one — replace its `proxy_pass` with the `root`
+# and `location` blocks below.
+
+server {
+    listen 80;
+    listen [::]:80;
+    server_name example.com www.example.com;
+
+    # Point this at the dist/ folder produced by `npm run build`.
+    root /home/deploy/site/dist;
+    index index.html;
+
+    # Asset filenames carry a content hash, so a stale copy can never be wrong.
+    location /assets/ {
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+        access_log off;
+    }
+
+    # Media keeps the same filename across builds, so let the browser revalidate.
+    location ~* \.(mp4|webp|jpg|jpeg|png|svg|ico)$ {
+        expires 7d;
+        add_header Cache-Control "public";
+        access_log off;
+    }
+
+    # index.html must never be cached, or a deploy never reaches anyone.
+    location = /index.html {
+        add_header Cache-Control "no-cache, must-revalidate";
+    }
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    # Video seeking needs range requests; nginx does this by default, but the
+    # mp4 module makes it explicit if the module is compiled in.
+    location ~* \.mp4$ {
+        add_header Accept-Ranges bytes;
+    }
+
+    gzip on;
+    gzip_vary on;
+    gzip_min_length 1024;
+    gzip_types text/plain text/css application/javascript application/json image/svg+xml;
+
+    # Videos and webp are already compressed — gzipping them only burns CPU.
+}

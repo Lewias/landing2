@@ -1,0 +1,160 @@
+@import "tailwindcss";
+
+@theme {
+  --color-background: #000000;
+  --color-foreground: #ffffff;
+
+  /* Accent sampled straight off the reference artwork */
+  --color-acid: #acd70e;
+  --color-acid-bright: #c6f22c;
+  --color-acid-dim: #6f8b0a;
+
+  --color-danger: #ff6a5e;
+
+  --color-body: #cccccc;
+  --color-subtle: #a3a3a3;
+  --color-faint: #b5b5b5;
+
+  --font-sans: "Archivo", ui-sans-serif, system-ui, -apple-system, "Segoe UI",
+    sans-serif;
+}
+
+/*
+ * The whole page is laid out in rem against a 1280x853 design, so this one
+ * declaration scales every size at once.
+ *
+ * - 1.125vw keeps the container at ~90% of the viewport width, so the design
+ *   never sits as a narrow island on a 2K or 4K screen.
+ * - 1.85vh caps that by height, so the hero plus the stats row still land on
+ *   one screen on a 16:9 monitor instead of scaling past the fold.
+ * - the 1rem floor keeps everything below ~1400px pixel-identical to the mock,
+ *   and rem rather than px means the user's own font-size setting is kept.
+ */
+html {
+  font-size: clamp(1rem, min(1.125vw, 1.85vh), 1.8rem);
+  scroll-behavior: smooth;
+  background-color: var(--color-background);
+}
+
+body {
+  margin: 0;
+  background-color: var(--color-background);
+  color: var(--color-foreground);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+/* Shared page container: full-bleed sections, contained content. */
+@utility container-page {
+  margin-inline: auto;
+  width: 100%;
+  max-width: 80rem;
+  padding-inline: clamp(1.25rem, 3.52vw, 2.8125rem);
+}
+
+/* Vertical rhythm shared by every section below the hero. */
+@utility section-y {
+  padding-block: clamp(4.5rem, 7vw, 7.5rem);
+}
+
+/* Anchor links land below the sticky header. */
+[id] {
+  scroll-margin-top: 6rem;
+}
+
+/* Platform marquee. A CSS animation, so it keeps running smoothly and is
+   switched off entirely by the reduced-motion block below. */
+@keyframes marquee-x {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+/* Accordion open/close, driven by Reka UI's measured content height. */
+@keyframes acc-down {
+  from {
+    height: 0;
+    opacity: 0;
+  }
+  to {
+    height: var(--reka-accordion-content-height);
+    opacity: 1;
+  }
+}
+
+@keyframes acc-up {
+  from {
+    height: var(--reka-accordion-content-height);
+    opacity: 1;
+  }
+  to {
+    height: 0;
+    opacity: 0;
+  }
+}
+
+/* Application dialog: overlay fade plus a short lift for the panel. */
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes fade-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes dialog-in {
+  from {
+    opacity: 0;
+    transform: translateY(1rem) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes dialog-out {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(0.5rem) scale(0.99);
+  }
+}
+
+::selection {
+  background: var(--color-acid);
+  color: #000;
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-acid);
+  outline-offset: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
